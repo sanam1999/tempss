@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import {
   Table,
@@ -49,44 +49,41 @@ export const PurchaseRegister = () => {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<PurchaseRecord | null>(null);
 
-  // Fetch purchases function - made reusable with useCallback
-  const fetchPurchases = useCallback(async () => {
-    try {
-      setLoading(true);
-      const res = await fetch("/api/purchase-register");
-      if (!res.ok) {
-        let errorMsg = `HTTP error ${res.status}`;
-        try {
-          const errData = await res.json();
-          errorMsg = errData?.error || errorMsg;
-        } catch { }
-        throw new Error(errorMsg);
-      }
-
-      const text = await res.text();
-      const data: PurchaseRecord[] = text ? JSON.parse(text) : [];
-
-      // Sort by serialNumber descending (latest first)
-      data.sort((a, b) => parseInt(b.serialNumber) - parseInt(a.serialNumber));
-
-      setPurchases(data);
-      setFilteredPurchases(data);
-    } catch (err) {
-      console.error(err);
-      toast({
-        title: "Error",
-        description: "Failed to load purchases",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
   // Fetch purchases on mount
   useEffect(() => {
+    const fetchPurchases = async () => {
+      try {
+        const res = await fetch("/api/purchase-register");
+        if (!res.ok) {
+          let errorMsg = `HTTP error ${res.status}`;
+          try {
+            const errData = await res.json();
+            errorMsg = errData?.error || errorMsg;
+          } catch { }
+          throw new Error(errorMsg);
+        }
+
+        const text = await res.text();
+        const data: PurchaseRecord[] = text ? JSON.parse(text) : [];
+
+        // Sort by serialNumber descending (latest first)
+        data.sort((a, b) => parseInt(b.serialNumber) - parseInt(a.serialNumber));
+
+        setPurchases(data);
+        setFilteredPurchases(data);
+
+
+      } catch (err) {
+        console.error(err);
+        toast({
+          title: "Error",
+          description: "Failed to load purchases",
+          variant: "destructive",
+        });
+      }
+    };
     fetchPurchases();
-  }, [fetchPurchases]);
+  }, []);
 
   // Auto-apply search filter only (not date)
   useEffect(() => {
@@ -147,7 +144,7 @@ export const PurchaseRegister = () => {
   );
 
   const handleDeleteRecord = async (id: string): Promise<void> => {
-    if (!confirm(`Are you sure you want to delete this record?`)) return;
+    if (!confirm(`Are you sure you want to delete this value ${id}?`)) return;
 
     try {
       const res = await fetch(`/api/balance-statement/balance-edit?id=${id}`, {
@@ -162,8 +159,21 @@ export const PurchaseRegister = () => {
           description: data.message || "Record deleted successfully",
         });
 
-        // Refetch all data from server to ensure consistency
-        await fetchPurchases();
+        // ✅ stay on same page
+        setPurchases(prev =>
+          prev.map(p => ({
+            ...p,
+            currencies: p.currencies.filter(c => c.id !== id),
+          })).filter(p => p.currencies.length > 0)
+        );
+
+        setFilteredPurchases(prev =>
+          prev.map(p => ({
+            ...p,
+            currencies: p.currencies.filter(c => c.id !== id),
+          })).filter(p => p.currencies.length > 0)
+        );
+
       } else {
         toast({
           title: "Error",
@@ -180,6 +190,7 @@ export const PurchaseRegister = () => {
     }
   };
 
+
   const handleEditRecord = (currencyId: string) => {
     const purchase = purchases.find(p =>
       p.currencies.some(c => c.id === currencyId)
@@ -190,11 +201,6 @@ export const PurchaseRegister = () => {
     }
   };
 
-  const handleSaveEdit = async () => {
-    setIsEditOpen(false);
-    // Refetch data after edit
-    await fetchPurchases();
-  };
 
   return (
     <Card className="shadow-[var(--shadow-medium)]">
@@ -265,13 +271,16 @@ export const PurchaseRegister = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
+
                 {filteredPurchases.length > 0 ? (
+
                   filteredPurchases.map((purchase) =>
                     purchase.currencies.map((currency, index) => (
                       <TableRow
-                        key={`${purchase.id}-${currency.id}`}
+                        key={`${index}-${currency.currencyType}`}
                         className="hover:bg-muted/30"
                       >
+
                         {index === 0 && (
                           <>
                             <TableCell rowSpan={purchase.currencies.length}>
@@ -325,7 +334,7 @@ export const PurchaseRegister = () => {
                           <Button
                             variant="destructive"
                             size="sm"
-                            onClick={() => handleDeleteRecord(currency.id)}
+                            onClick={() => { handleDeleteRecord(currency.id) }}
                             className="gap-2"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -344,7 +353,7 @@ export const PurchaseRegister = () => {
                   )
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                       No transactions found
                     </TableCell>
                   </TableRow>
@@ -372,8 +381,14 @@ export const PurchaseRegister = () => {
             : null
         }
         onClose={() => setIsEditOpen(false)}
-        onSave={handleSaveEdit}
+        onSave={() => {
+
+          setIsEditOpen(false);
+        }}
       />
+
+
     </Card>
+
   );
 };
