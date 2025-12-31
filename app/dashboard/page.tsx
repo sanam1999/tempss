@@ -1,13 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components 16-00-08-913/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { BookOpen, PieChart, Receipt, Wallet } from "lucide-react";
 
-import { CustomerReceipt } from "../components 16-00-08-913/customerReceipt/CustomerReceipt";
-import { PurchaseRegister } from "../components 16-00-08-913/purchaseRegister/PurchaseRegister";
-import BalanceStatement from "../components 16-00-08-913/balanceStatement/BalanceStatement";
-import { DepositHistory } from "../components 16-00-08-913/depositHistory/DepositHistory"; // example
+import { CustomerReceipt } from "../components/customerReceipt/CustomerReceipt";
+import { PurchaseRegister } from "../components/purchaseRegister/PurchaseRegister";
+import BalanceStatement from "../components/balanceStatement/BalanceStatement";
+import { DepositHistory } from "../components/depositHistory/DepositHistory"; // example
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState("receipt");

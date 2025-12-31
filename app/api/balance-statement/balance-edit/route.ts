@@ -25,8 +25,7 @@ export async function PATCH(req: NextRequest) {
             );
         }
 
-        const oldAmount = Number(existingCurrency.amountFcy);
-        const newAmount = Number(body.amountFcy);
+        
         const currencyType = body.currencyType;
         const receiptDate = existingCurrency.receipt.receiptDate;
 

@@ -10,7 +10,7 @@ import {
   CardDescription,
   CardContent,
   CardFooter,
-} from "../components 16-00-08-913/ui/card";
+} from "../components/ui/card";
 
 export default function LoginPage() {
   const router = useRouter();
