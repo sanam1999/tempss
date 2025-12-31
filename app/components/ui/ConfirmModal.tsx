@@ -1,5 +1,5 @@
-import { Button } from "./button";
-import { CurrencyRow } from "../customerReceipt/CustomerReceipt";
+import { Button } from "../ui/button";
+import { CurrencyRow } from "../customerReceipt/CustomerReceipt"; 
 
 interface ConfirmationModalProps {
   open: boolean;

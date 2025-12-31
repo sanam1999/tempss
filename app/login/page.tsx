@@ -10,7 +10,7 @@ import {
   CardDescription,
   CardContent,
   CardFooter,
-} from "../components/ui/card";
+} from "../components 16-00-08-913/ui/card";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -37,7 +37,7 @@ export default function LoginPage() {
 
   return (
     <div className="flex justify-center items-start min-h-screen pt-20 bg-gray-50">
-       <Card className="w-96 min-h-[24rem] max-h-screen flex flex-col justify-between shadow-lg">
+      <Card className="w-96 min-h-[24rem] max-h-screen flex flex-col justify-between shadow-lg">
         <form onSubmit={handleLogin} className="flex flex-col h-full">
           <CardHeader>
             <CardTitle>Login</CardTitle>

@@ -1,3 +1,5 @@
+
+
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
@@ -21,7 +23,7 @@ import { Input } from "../ui/input";
 import { Button } from "../ui/button";
 
 import { DateRangeFilter } from "../ui/DateRangeFilter";
-import { generateBalanceStatementPDF } from "./pdfGenerator";
+import { generateBalanceStatementPDF } from "../balanceStatement/pdfGenerator";
 import { toast } from "@/app/hooks/use-toast";
 
 interface CurrencyBalance {
@@ -48,13 +50,13 @@ export interface BalanceStatementPDFData {
   toDate: string;
   balances: CurrencyBalance[];
 }
-
 const fetchSriLankaTime = async () => {
   const res = await fetch("/api/date");
   if (!res.ok) throw new Error("Error fetching date");
   return res.json();
 };
 
+// Helper to get Sri Lanka date string YYYY-MM-DD
 export const getSriLankaDateString = async (): Promise<string | null> => {
   try {
     const data = await fetchSriLankaTime();
@@ -74,9 +76,7 @@ export default function BalanceStatement() {
   const [depositRecords, setDepositRecords] = useState<Record<string, DepositRecord[]>>({});
   const [selectedCurrency, setSelectedCurrency] = useState<string>("");
 
-  const fetchBalanceData = useCallback(async () => {
-    if (!fromDate || !toDate) return;
-
+  const fetchBalanceData = async () => {
     try {
       setLoading(true);
 
@@ -87,6 +87,7 @@ export default function BalanceStatement() {
       if (!res.ok) throw new Error("Failed to fetch balance data");
 
       const response = await res.json();
+      console.log(response)
       const data: CurrencyBalance[] = Array.isArray(response)
         ? response
         : response.rows || [];
@@ -94,16 +95,14 @@ export default function BalanceStatement() {
       setBalances(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Error fetching balances:", err);
-      toast({
-        title: "Error",
-        description: "Failed to fetch balance data",
-        variant: "destructive",
-      });
     } finally {
       setLoading(false);
     }
-  }, [fromDate, toDate]);
+  };
 
+  // =========================
+  // Fetch deposit records (MEMOIZED)
+  // =========================
   const fetchDepositRecords = useCallback(
     async (currencyType: string) => {
       try {
@@ -126,6 +125,9 @@ export default function BalanceStatement() {
     [toDate]
   );
 
+  // =========================
+  // Filter visible balances
+  // =========================
   const visibleBalances = balances.filter((b) => {
     const hasTransactions = [
       "purchases",
@@ -142,6 +144,20 @@ export default function BalanceStatement() {
     return hasOpening || hasTransactions;
   });
 
+
+  useEffect(() => {
+    const fetchWhenReady = () => {
+      if (fromDate != null) {
+        fetchBalanceData();
+      } else {
+        // Retry after delay
+        setTimeout(fetchWhenReady, 3000);
+      }
+    };
+
+    fetchWhenReady();
+  }, []);
+
   useEffect(() => {
     const fetchDate = async () => {
       const date = await getSriLankaDateString();
@@ -154,12 +170,6 @@ export default function BalanceStatement() {
   }, []);
 
   useEffect(() => {
-    if (fromDate && toDate) {
-      fetchBalanceData();
-    }
-  }, [fromDate, toDate, fetchBalanceData]);
-
-  useEffect(() => {
     visibleBalances.forEach((balance) => {
       const hasDeposits = parseFloat(balance.deposits || "0") > 0;
       const alreadyFetched = depositRecords[balance.currencyType];
@@ -169,6 +179,7 @@ export default function BalanceStatement() {
       }
     });
   }, [visibleBalances, depositRecords, fetchDepositRecords]);
+
 
   const handleDepositInput = (value: string) => {
     setDepositInputs((prev) => ({
@@ -213,11 +224,6 @@ export default function BalanceStatement() {
         return;
       }
 
-      toast({
-        title: "Success",
-        description: "Deposit added successfully",
-      });
-
       setDepositInputs((prev) => ({ ...prev, [selectedCurrency]: "" }));
       setSelectedCurrency("");
 
@@ -232,11 +238,6 @@ export default function BalanceStatement() {
       });
     } catch (err) {
       console.error("Error saving deposit:", err);
-      toast({
-        title: "Error",
-        description: "Failed to save deposit",
-        variant: "destructive",
-      });
     }
   };
 
@@ -265,6 +266,8 @@ export default function BalanceStatement() {
       </CardHeader>
 
       <CardContent className="pt-6 space-y-6">
+
+        {/* ✅ Reusable Date Filter */}
         <DateRangeFilter
           fromDate={fromDate}
           toDate={toDate}
@@ -274,6 +277,7 @@ export default function BalanceStatement() {
           onFilter={fetchBalanceData}
         />
 
+        {/* ✅ Deposit Input Section - Outside the Table */}
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">Add Deposit</CardTitle>
@@ -325,6 +329,7 @@ export default function BalanceStatement() {
           </CardContent>
         </Card>
 
+        {/* ✅ Balance Table */}
         <div className="border rounded-lg overflow-hidden">
           <div className="overflow-x-auto">
             <Table>
@@ -356,11 +361,13 @@ export default function BalanceStatement() {
                     <TableCell className="text-right font-mono text-destructive">{balance.exchangeSell}</TableCell>
                     <TableCell className="text-right font-mono text-destructive">{balance.sales}</TableCell>
 
+                    {/* ✅ Deposit Column - Only shows total amount */}
                     <TableCell className="text-right">
                       <div className="flex flex-col items-end">
                         <span className="font-mono text-lg font-semibold">
                           {getTotalDeposits(balance.currencyType).toFixed(2)}
                         </span>
+
                       </div>
                     </TableCell>
 
@@ -375,12 +382,7 @@ export default function BalanceStatement() {
         </div>
 
         <div className="flex justify-end pt-4">
-          <Button
-            size="lg"
-            className="gap-2 bg-gradient-to-r from-accent to-accent/90"
-            onClick={handleDownloadReport}
-            disabled={visibleBalances.length === 0 || loading}
-          >
+          <Button size="lg" className="gap-2 bg-gradient-to-r from-accent to-accent/90" onClick={handleDownloadReport} disabled={visibleBalances.length === 0 || loading}>
             Download Report
           </Button>
         </div>
@@ -393,4 +395,6 @@ export default function BalanceStatement() {
       </CardContent>
     </Card>
   );
+
+
 }
