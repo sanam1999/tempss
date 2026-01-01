@@ -1,29 +1,16 @@
-
+// ============================================
+// FILE: app/components/balanceStatement/BalanceStatement.tsx
+// ============================================
 
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "../ui/card";
-
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "../ui/table";
-
+import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
 import { Input } from "../ui/input";
 import { Button } from "../ui/button";
-
 import { DateRangeFilter } from "../ui/DateRangeFilter";
-import { generateBalanceStatementPDF } from "../balanceStatement/pdfGenerator";
+import { generateBalanceStatementPDF } from "./pdfGenerator";
 import { toast } from "@/app/hooks/use-toast";
 
 interface CurrencyBalance {
@@ -37,26 +24,12 @@ interface CurrencyBalance {
   closingBalance: string;
 }
 
-interface DepositRecord {
-  id: string;
-  currencyType: string;
-  amount: number;
-  date: Date;
-  createdAt: Date;
-}
-
-export interface BalanceStatementPDFData {
-  fromDate: string;
-  toDate: string;
-  balances: CurrencyBalance[];
-}
 const fetchSriLankaTime = async () => {
   const res = await fetch("/api/date");
   if (!res.ok) throw new Error("Error fetching date");
   return res.json();
 };
 
-// Helper to get Sri Lanka date string YYYY-MM-DD
 export const getSriLankaDateString = async (): Promise<string | null> => {
   try {
     const data = await fetchSriLankaTime();
@@ -73,90 +46,35 @@ export default function BalanceStatement() {
   const [balances, setBalances] = useState<CurrencyBalance[]>([]);
   const [loading, setLoading] = useState(false);
   const [depositInputs, setDepositInputs] = useState<Record<string, string>>({});
-  const [depositRecords, setDepositRecords] = useState<Record<string, DepositRecord[]>>({});
   const [selectedCurrency, setSelectedCurrency] = useState<string>("");
+  const [refreshKey, setRefreshKey] = useState(0);
 
-  const fetchBalanceData = async () => {
+  const fetchBalanceData = useCallback(async () => {
+    if (!fromDate || !toDate) return;
+
     try {
       setLoading(true);
-
-      const res = await fetch(
-        `/api/balance-statement?fromDate=${fromDate}&toDate=${toDate}`
-      );
-
-      if (!res.ok) throw new Error("Failed to fetch balance data");
+      const res = await fetch(`/api/balance-statement?fromDate=${fromDate}&toDate=${toDate}&_t=${Date.now()}`);
+      if (!res.ok) throw new Error("Failed to fetch");
 
       const response = await res.json();
-      console.log(response)
-      const data: CurrencyBalance[] = Array.isArray(response)
-        ? response
-        : response.rows || [];
-
-      setBalances(Array.isArray(data) ? data : []);
+      const data: CurrencyBalance[] = Array.isArray(response) ? response : [];
+      setBalances(data);
     } catch (err) {
-      console.error("Error fetching balances:", err);
+      console.error("Error:", err);
+      toast({ title: "Error", description: "Failed to fetch balances", variant: "destructive" });
     } finally {
       setLoading(false);
     }
-  };
+  }, [fromDate, toDate]);
 
-  // =========================
-  // Fetch deposit records (MEMOIZED)
-  // =========================
-  const fetchDepositRecords = useCallback(
-    async (currencyType: string) => {
-      try {
-        const res = await fetch(
-          `/api/balance-statement/deposits?currency=${currencyType}&date=${toDate}`
-        );
-
-        if (!res.ok) throw new Error("Failed to fetch deposit records");
-
-        const deposits: DepositRecord[] = await res.json();
-
-        setDepositRecords((prev) => ({
-          ...prev,
-          [currencyType]: deposits,
-        }));
-      } catch (err) {
-        console.error("Error fetching deposit records:", err);
-      }
-    },
-    [toDate]
-  );
-
-  // =========================
-  // Filter visible balances
-  // =========================
   const visibleBalances = balances.filter((b) => {
-    const hasTransactions = [
-      "purchases",
-      "exchangeBuy",
-      "exchangeSell",
-      "sales",
-      "deposits",
-    ].some(
+    const hasTransactions = ["purchases", "exchangeBuy", "exchangeSell", "sales", "deposits"].some(
       (field) => parseFloat(b[field as keyof CurrencyBalance] || "0") !== 0
     );
-
     const hasOpening = parseFloat(b.openingBalance || "0") !== 0;
-
     return hasOpening || hasTransactions;
   });
-
-
-  useEffect(() => {
-    const fetchWhenReady = () => {
-      if (fromDate != null) {
-        fetchBalanceData();
-      } else {
-        // Retry after delay
-        setTimeout(fetchWhenReady, 3000);
-      }
-    };
-
-    fetchWhenReady();
-  }, []);
 
   useEffect(() => {
     const fetchDate = async () => {
@@ -170,35 +88,17 @@ export default function BalanceStatement() {
   }, []);
 
   useEffect(() => {
-    visibleBalances.forEach((balance) => {
-      const hasDeposits = parseFloat(balance.deposits || "0") > 0;
-      const alreadyFetched = depositRecords[balance.currencyType];
-
-      if (hasDeposits && !alreadyFetched) {
-        fetchDepositRecords(balance.currencyType);
-      }
-    });
-  }, [visibleBalances, depositRecords, fetchDepositRecords]);
-
-
-  const handleDepositInput = (value: string) => {
-    setDepositInputs((prev) => ({
-      ...prev,
-      [selectedCurrency]: value,
-    }));
-  };
+    if (fromDate && toDate) {
+      fetchBalanceData();
+    }
+  }, [fromDate, toDate, refreshKey, fetchBalanceData]);
 
   const handleSaveDeposit = async () => {
     if (!selectedCurrency) return;
 
     const amount = parseFloat(depositInputs[selectedCurrency] || "");
-
     if (isNaN(amount) || amount <= 0) {
-      toast({
-        title: "Invalid Deposit",
-        description: "Please enter a valid deposit amount.",
-        variant: "destructive",
-      });
+      toast({ title: "Invalid Amount", description: "Enter valid deposit amount", variant: "destructive" });
       return;
     }
 
@@ -206,68 +106,44 @@ export default function BalanceStatement() {
       const res = await fetch("/api/balance-statement/update-deposit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          currencyType: selectedCurrency,
-          date: toDate,
-          amount,
-        }),
+        body: JSON.stringify({ currencyType: selectedCurrency, date: toDate, amount }),
       });
 
       const data = await res.json();
-
       if (!res.ok) {
-        toast({
-          title: "Error",
-          description: data.error || "Something went wrong",
-          variant: "destructive",
-        });
+        toast({ title: "Error", description: data.error, variant: "destructive" });
         return;
       }
 
+      toast({ title: "Success", description: "Deposit added" });
       setDepositInputs((prev) => ({ ...prev, [selectedCurrency]: "" }));
       setSelectedCurrency("");
-
-      // Refresh data
-      await fetchBalanceData();
-
-      // Force refetch deposits for updated currency
-      setDepositRecords((prev) => {
-        const copy = { ...prev };
-        delete copy[selectedCurrency];
-        return copy;
-      });
+      setRefreshKey((prev) => prev + 1);
     } catch (err) {
-      console.error("Error saving deposit:", err);
+      toast({ title: "Error", description: "Failed to save", variant: "destructive" });
     }
   };
 
-  const getTotalDeposits = (currencyType: string): number => {
-    const balance = balances.find((b) => b.currencyType === currencyType);
-    return balance ? parseFloat(balance.deposits || "0") : 0;
-  };
-
-  const availableCurrencies = visibleBalances.map(
-    (balance) => balance.currencyType
-  );
-
-  const handleDownloadReport = () => {
-    generateBalanceStatementPDF({
-      fromDate,
-      toDate,
-      balances: visibleBalances,
-    });
-  };
-
   return (
-    <Card className="shadow-[var(--shadow-medium)]">
+    <Card className="shadow-lg">
       <CardHeader className="bg-gradient-to-r from-primary to-primary/90 text-primary-foreground">
-        <CardTitle className="text-2xl">Balance Statement</CardTitle>
-        <p className="text-sm opacity-90">Multi-Currency Inventory Dashboard</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="text-2xl">Balance Statement</CardTitle>
+            <p className="text-sm opacity-90">Multi-Currency Inventory Dashboard</p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setRefreshKey((p) => p + 1)}
+            className="bg-white/10 hover:bg-white/20 text-white border-white/30"
+          >
+            Refresh
+          </Button>
+        </div>
       </CardHeader>
 
       <CardContent className="pt-6 space-y-6">
-
-        {/* ✅ Reusable Date Filter */}
         <DateRangeFilter
           fromDate={fromDate}
           toDate={toDate}
@@ -277,7 +153,6 @@ export default function BalanceStatement() {
           onFilter={fetchBalanceData}
         />
 
-        {/* ✅ Deposit Input Section - Outside the Table */}
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">Add Deposit</CardTitle>
@@ -286,31 +161,29 @@ export default function BalanceStatement() {
             <div className="flex flex-col sm:flex-row gap-4 items-end">
               <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="text-sm font-medium mb-2 block">
-                    Select Currency
-                  </label>
+                  <label className="text-sm font-medium mb-2 block">Select Currency</label>
                   <select
                     value={selectedCurrency}
                     onChange={(e) => setSelectedCurrency(e.target.value)}
                     className="w-full p-2 border rounded-md"
                   >
                     <option value="">Choose currency</option>
-                    {availableCurrencies.map(currency => (
-                      <option key={currency} value={currency}>
-                        {currency}
+                    {visibleBalances.map((b) => (
+                      <option key={b.currencyType} value={b.currencyType}>
+                        {b.currencyType}
                       </option>
                     ))}
                   </select>
                 </div>
 
                 <div>
-                  <label className="text-sm font-medium mb-2 block">
-                    Deposit Amount
-                  </label>
+                  <label className="text-sm font-medium mb-2 block">Deposit Amount</label>
                   <Input
                     type="number"
-                    value={selectedCurrency ? (depositInputs[selectedCurrency] || "") : ""}
-                    onChange={(e) => handleDepositInput(e.target.value)}
+                    value={selectedCurrency ? depositInputs[selectedCurrency] || "" : ""}
+                    onChange={(e) =>
+                      setDepositInputs((prev) => ({ ...prev, [selectedCurrency]: e.target.value }))
+                    }
                     className="text-right font-mono"
                     placeholder="0.00"
                     disabled={!selectedCurrency}
@@ -318,83 +191,78 @@ export default function BalanceStatement() {
                 </div>
               </div>
 
-              <Button
-                variant="default"
-                onClick={handleSaveDeposit}
-                disabled={!selectedCurrency || !depositInputs[selectedCurrency]}
-              >
+              <Button variant="default" onClick={handleSaveDeposit} disabled={!selectedCurrency}>
                 Add Deposit
               </Button>
             </div>
           </CardContent>
         </Card>
 
-        {/* ✅ Balance Table */}
         <div className="border rounded-lg overflow-hidden">
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/50">
-                  <TableHead className="font-semibold">Currency Type</TableHead>
-                  <TableHead className="text-right">Opening Balance (a)</TableHead>
+                  <TableHead className="font-semibold">Currency</TableHead>
+                  <TableHead className="text-right">Opening (a)</TableHead>
                   <TableHead className="text-right">Purchases (b)</TableHead>
-                  <TableHead className="text-right">Exchange-Buy (c)</TableHead>
-                  <TableHead className="text-right">Exchange-Sell (d)</TableHead>
+                  <TableHead className="text-right">Ex-Buy (c)</TableHead>
+                  <TableHead className="text-right">Ex-Sell (d)</TableHead>
                   <TableHead className="text-right">Sales (e)</TableHead>
                   <TableHead className="text-right">Deposits (f)</TableHead>
-                  <TableHead className="text-right font-semibold">Closing Balance</TableHead>
+                  <TableHead className="text-right font-semibold">Closing</TableHead>
                 </TableRow>
               </TableHeader>
 
               <TableBody>
-                {visibleBalances.map((balance, index) => (
-                  <TableRow key={balance.currencyType || index} className="hover:bg-muted/30">
-                    <TableCell className="font-semibold">
-                      <span className="px-2 py-1 bg-primary/10 text-primary rounded text-sm">
-                        {balance.currencyType}
-                      </span>
-                    </TableCell>
-
-                    <TableCell className="text-right font-mono">{balance.openingBalance}</TableCell>
-                    <TableCell className="text-right font-mono text-accent">{balance.purchases}</TableCell>
-                    <TableCell className="text-right font-mono text-accent">{balance.exchangeBuy}</TableCell>
-                    <TableCell className="text-right font-mono text-destructive">{balance.exchangeSell}</TableCell>
-                    <TableCell className="text-right font-mono text-destructive">{balance.sales}</TableCell>
-
-                    {/* ✅ Deposit Column - Only shows total amount */}
-                    <TableCell className="text-right">
-                      <div className="flex flex-col items-end">
-                        <span className="font-mono text-lg font-semibold">
-                          {getTotalDeposits(balance.currencyType).toFixed(2)}
+                {visibleBalances.length > 0 ? (
+                  visibleBalances.map((balance) => (
+                    <TableRow key={balance.currencyType} className="hover:bg-muted/30">
+                      <TableCell className="font-semibold">
+                        <span className="px-2 py-1 bg-primary/10 text-primary rounded text-sm">
+                          {balance.currencyType}
                         </span>
-
-                      </div>
-                    </TableCell>
-
-                    <TableCell className="text-right font-mono font-bold text-primary">
-                      {balance.closingBalance}
+                      </TableCell>
+                      <TableCell className="text-right font-mono">{balance.openingBalance}</TableCell>
+                      <TableCell className="text-right font-mono text-green-600">{balance.purchases}</TableCell>
+                      <TableCell className="text-right font-mono text-green-600">{balance.exchangeBuy}</TableCell>
+                      <TableCell className="text-right font-mono text-red-600">{balance.exchangeSell}</TableCell>
+                      <TableCell className="text-right font-mono text-red-600">{balance.sales}</TableCell>
+                      <TableCell className="text-right font-mono font-semibold">{balance.deposits}</TableCell>
+                      <TableCell className="text-right font-mono font-bold text-primary">
+                        {balance.closingBalance}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                      {loading ? "Loading..." : "No data available"}
                     </TableCell>
                   </TableRow>
-                ))}
+                )}
               </TableBody>
             </Table>
           </div>
         </div>
 
         <div className="flex justify-end pt-4">
-          <Button size="lg" className="gap-2 bg-gradient-to-r from-accent to-accent/90" onClick={handleDownloadReport} disabled={visibleBalances.length === 0 || loading}>
+          <Button
+            size="lg"
+            className="gap-2"
+            onClick={() => generateBalanceStatementPDF({ fromDate, toDate, balances: visibleBalances })}
+            disabled={visibleBalances.length === 0 || loading}
+          >
             Download Report
           </Button>
         </div>
 
-        <div className="p-4 bg-muted/50 rounded-lg border border-border">
+        <div className="p-4 bg-muted/50 rounded-lg border">
           <p className="text-sm text-muted-foreground">
-            <span className="font-semibold">Closing Balance Formula:</span> (a) + (b) + (c) - (d) - (e) - (f)
+            <span className="font-semibold">Formula:</span> (a) + (b) + (c) - (d) - (e) - (f) = Closing Balance
           </p>
         </div>
       </CardContent>
     </Card>
   );
-
-
 }

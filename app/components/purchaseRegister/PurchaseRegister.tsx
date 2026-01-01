@@ -1,24 +1,17 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "../ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
 import { Trash2, Pencil } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Search } from "lucide-react";
 import { toast } from "../../hooks/use-toast";
-import { CurrencySummary } from "./CurrencySummary";
 import { DateRangeFilter } from "../ui/DateRangeFilter";
-import { CurrencyEditModal } from "../ui/edit-receipt"
+import { CurrencyEditModal } from "../ui/edit-receipt";
+import { CurrencySummary } from "./CurrencySummary";
 
 interface CurrencyDetail {
   currencyType: string;
@@ -39,6 +32,23 @@ interface PurchaseRecord {
   currencies: CurrencyDetail[];
 }
 
+const fetchSriLankaTime = async () => {
+  const res = await fetch("/api/date");
+  if (!res.ok) throw new Error("Error fetching date");
+  return res.json();
+};
+
+// Helper to get Sri Lanka date string YYYY-MM-DD
+export const getSriLankaDateString = async (): Promise<string | null> => {
+  try {
+    const data = await fetchSriLankaTime();
+    return data.date;
+  } catch (e) {
+    console.error(e);
+    return null;
+  }
+};
+
 export const PurchaseRegister = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [purchases, setPurchases] = useState<PurchaseRecord[]>([]);
@@ -48,159 +58,87 @@ export const PurchaseRegister = () => {
   const [loading, setLoading] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<PurchaseRecord | null>(null);
+  const [today, settodaydate] = useState<string>("")
 
-  // Fetch purchases on mount
+
   useEffect(() => {
-    const fetchPurchases = async () => {
-      try {
-        const res = await fetch("/api/purchase-register");
-        if (!res.ok) {
-          let errorMsg = `HTTP error ${res.status}`;
-          try {
-            const errData = await res.json();
-            errorMsg = errData?.error || errorMsg;
-          } catch { }
-          throw new Error(errorMsg);
-        }
-
-        const text = await res.text();
-        const data: PurchaseRecord[] = text ? JSON.parse(text) : [];
-
-        // Sort by serialNumber descending (latest first)
-        data.sort((a, b) => parseInt(b.serialNumber) - parseInt(a.serialNumber));
-
-        setPurchases(data);
-        setFilteredPurchases(data);
-
-
-      } catch (err) {
-        console.error(err);
-        toast({
-          title: "Error",
-          description: "Failed to load purchases",
-          variant: "destructive",
-        });
+    const fetchDate = async () => {
+      const date = await getSriLankaDateString();
+      if (date) {
+        setFromDate(date);
+        setToDate(date);
+        settodaydate(date);
       }
     };
-    fetchPurchases();
+    fetchDate();
   }, []);
 
-  // Auto-apply search filter only (not date)
+  const fetchPurchases = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await fetch("/api/purchase-register");
+      if (!res.ok) throw new Error("Failed to fetch");
+
+      const data: PurchaseRecord[] = await res.json();
+      data.sort((a, b) => parseInt(b.serialNumber) - parseInt(a.serialNumber));
+
+      setPurchases(data);
+      setFilteredPurchases(data);
+    } catch (err) {
+      toast({ title: "Error", description: "Failed to load purchases", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchPurchases();
+  }, [fetchPurchases]);
+
   useEffect(() => {
     const filtered = purchases.filter(
-      (purchase) =>
-        purchase.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        purchase.nicPassport.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        purchase.serialNumber.includes(searchTerm)
+      (p) =>
+        p.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        p.nicPassport.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        p.serialNumber.includes(searchTerm)
     );
-
-    // Sort by serialNumber descending
-    filtered.sort((a, b) => parseInt(b.serialNumber) - parseInt(a.serialNumber));
-
     setFilteredPurchases(filtered);
   }, [searchTerm, purchases]);
 
-  // Filter by date when clicking Filter button
-  const handleFilter = () => {
-    setLoading(true);
-
-    let filtered = [...purchases];
-
-    // Apply date range filter
-    if (fromDate && toDate) {
-      filtered = filtered.filter((purchase) => {
-        const purchaseDate = new Date(purchase.date);
-        const from = new Date(fromDate);
-        const to = new Date(toDate);
-        return purchaseDate >= from && purchaseDate <= to;
-      });
-    }
-
-    // Apply search filter
-    if (searchTerm) {
-      filtered = filtered.filter(
-        (purchase) =>
-          purchase.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          purchase.nicPassport.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          purchase.serialNumber.includes(searchTerm)
-      );
-    }
-
-    // Sort by serialNumber descending
-    filtered.sort((a, b) => parseInt(b.serialNumber) - parseInt(a.serialNumber));
-
-    setFilteredPurchases(filtered);
-    setTimeout(() => setLoading(false), 300);
-  };
-
-  const totalAmountRs = filteredPurchases.reduce(
-    (sum, purchase) =>
-      sum +
-      purchase.currencies.reduce(
-        (s, c) => s + parseFloat(c.amountIssuedLkr || "0"),
-        0
-      ),
-    0
-  );
-
   const handleDeleteRecord = async (id: string): Promise<void> => {
-    if (!confirm(`Are you sure you want to delete this value ${id}?`)) return;
+    if (!confirm("Delete this record?")) return;
 
     try {
-      const res = await fetch(`/api/balance-statement/balance-edit?id=${id}`, {
-        method: "DELETE",
-      });
-
+      const res = await fetch(`/api/balance-statement/balance-edit?id=${id}`, { method: "DELETE" });
       const data = await res.json();
 
       if (res.ok) {
-        toast({
-          title: "Success",
-          description: data.message || "Record deleted successfully",
-        });
-
-        // ✅ stay on same page
-        setPurchases(prev =>
-          prev.map(p => ({
-            ...p,
-            currencies: p.currencies.filter(c => c.id !== id),
-          })).filter(p => p.currencies.length > 0)
-        );
-
-        setFilteredPurchases(prev =>
-          prev.map(p => ({
-            ...p,
-            currencies: p.currencies.filter(c => c.id !== id),
-          })).filter(p => p.currencies.length > 0)
-        );
-
+        toast({ title: "Success", description: "Record deleted" });
+        await fetchPurchases();
       } else {
-        toast({
-          title: "Error",
-          description: data.error || "Delete failed",
-          variant: "destructive",
-        });
+        toast({ title: "Error", description: data.error, variant: "destructive" });
       }
     } catch {
-      toast({
-        title: "Network Error",
-        description: "Something went wrong",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Something went wrong", variant: "destructive" });
     }
   };
 
-
-  const handleEditRecord = (currencyId: string) => {
-    const purchase = purchases.find(p =>
-      p.currencies.some(c => c.id === currencyId)
-    );
-    if (purchase) {
-      setSelectedRecord(purchase);
+  const handleEditRecord = (record: PurchaseRecord, currency: CurrencyDetail) => {
+    if (record && currency) {
+      // Create a modified record with only the selected currency
+      const modifiedRecord = {
+        ...record,
+        currencies: [currency] // Pass only the clicked currency
+      };
+      setSelectedRecord(modifiedRecord);
       setIsEditOpen(true);
     }
   };
 
+  const totalAmount = filteredPurchases.reduce(
+    (sum, p) => sum + p.currencies.reduce((s, c) => s + parseFloat(c.amountIssuedLkr || "0"), 0),
+    0
+  );
 
   return (
     <Card className="shadow-[var(--shadow-medium)]">
@@ -233,25 +171,24 @@ export const PurchaseRegister = () => {
           </div>
           <div className="p-4 bg-gradient-to-br from-accent/10 to-accent/5 rounded-lg border border-accent/20">
             <p className="text-sm text-muted-foreground">Total Amount (LKR)</p>
-            <p className="text-2xl font-bold text-accent">{totalAmountRs.toFixed(2)}</p>
+            <p className="text-2xl font-bold text-accent">{totalAmount.toFixed(2)}</p>
           </div>
           <div className="p-4 bg-gradient-to-br from-green-500/10 to-green-500/5 rounded-lg border border-green-500/20">
             <p className="text-sm text-muted-foreground">Today&apos;s Date</p>
-            <p className="text-2xl font-bold">{new Date().toLocaleDateString()}</p>
+            <p className="text-2xl font-bold">{today}</p>
           </div>
         </div>
 
-        {/* Date Range Filter */}
+
         <DateRangeFilter
           fromDate={fromDate}
           toDate={toDate}
           loading={loading}
           onFromChange={setFromDate}
           onToChange={setToDate}
-          onFilter={handleFilter}
+          onFilter={fetchPurchases}
         />
 
-        {/* Purchase Table */}
         <div className="border rounded-lg overflow-hidden">
           <div className="overflow-x-auto">
             <Table>
@@ -267,20 +204,15 @@ export const PurchaseRegister = () => {
                   <TableHead className="text-right">Rate</TableHead>
                   <TableHead className="text-right">Amount (Rs.)</TableHead>
                   <TableHead>Remarks</TableHead>
-                  <TableHead>Action</TableHead>
+                  <TableHead className="text-center">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
 
                 {filteredPurchases.length > 0 ? (
-
                   filteredPurchases.map((purchase) =>
                     purchase.currencies.map((currency, index) => (
-                      <TableRow
-                        key={`${index}-${currency.currencyType}`}
-                        className="hover:bg-muted/30"
-                      >
-
+                      <TableRow key={`${purchase.id}-${currency.id}`}>
                         {index === 0 && (
                           <>
                             <TableCell rowSpan={purchase.currencies.length}>
@@ -320,7 +252,7 @@ export const PurchaseRegister = () => {
                           {parseFloat(currency.rate).toFixed(2)}
                         </TableCell>
                         <TableCell className="text-right font-mono font-semibold">
-                          {(Number(currency.amountFcy || 0) * Number(currency.rate || 0)).toFixed(2)}
+                          {parseFloat(currency.amountIssuedLkr).toFixed(2)}
                         </TableCell>
                         {index === 0 && (
                           <TableCell
@@ -330,20 +262,15 @@ export const PurchaseRegister = () => {
                             {purchase.remarks}
                           </TableCell>
                         )}
-                        <TableCell className="text-muted-foreground flex items-center gap-1">
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            onClick={() => { handleDeleteRecord(currency.id) }}
-                            className="gap-2"
-                          >
+                        <TableCell className="flex gap-1 text-center">
+                          <Button variant="destructive" size="sm" onClick={() => handleDeleteRecord(currency.id)}>
                             <Trash2 className="h-4 w-4" />
                           </Button>
                           <Button
                             variant="secondary"
                             size="sm"
-                            onClick={() => handleEditRecord(currency.id)}
-                            className="gap-2 bg-yellow-500 text-black hover:bg-yellow-600"
+                            onClick={() => handleEditRecord(purchase, currency)}
+                            className="bg-yellow-500 hover:bg-yellow-600"
                           >
                             <Pencil className="h-4 w-4" />
                           </Button>
@@ -353,7 +280,7 @@ export const PurchaseRegister = () => {
                   )
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={11} className="text-center py-8">
                       No transactions found
                     </TableCell>
                   </TableRow>
@@ -362,10 +289,8 @@ export const PurchaseRegister = () => {
             </Table>
           </div>
         </div>
-
-        <CurrencySummary purchases={filteredPurchases} />
       </CardContent>
-
+      <CurrencySummary purchases={filteredPurchases} />
       <CurrencyEditModal
         open={isEditOpen}
         previewData={
@@ -381,14 +306,11 @@ export const PurchaseRegister = () => {
             : null
         }
         onClose={() => setIsEditOpen(false)}
-        onSave={() => {
-
+        onSave={async () => {
           setIsEditOpen(false);
+          await fetchPurchases();
         }}
       />
-
-
     </Card>
-
   );
 };

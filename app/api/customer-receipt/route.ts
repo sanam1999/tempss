@@ -1,7 +1,6 @@
 // app/api/customer-receipt/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "../../libs/prisma";
-import { updateDailyBalances } from "@/app/libs/updateDailyBalance";
 import { toDayDate } from "@/app/libs/day";
 
 // ---- Types ----
@@ -58,7 +57,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const bankDate = toDayDate(date);
+    const bankDate = toDayDate(new Date(date));
 
     // Save receipt
     const receipt = await prisma.customerReceipt.create({
@@ -83,9 +82,10 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    await updateDailyBalances(receipt.id);
+    // ✅ REMOVED: updateDailyBalances call - using real-time calculation instead
+    // Your balance statement API calculates balances on-demand, which is more accurate
 
-    // ✅ FIX: infer currency type safely
+    // Infer currency type safely
     type ReceiptCurrency = (typeof receipt.currencies)[number];
 
     // Return BigInt-safe JSON
@@ -94,6 +94,7 @@ export async function POST(req: NextRequest) {
       receipt: {
         ...receipt,
         id: receipt.id.toString(),
+        createdById: receipt.createdById?.toString() || null,
         currencies: receipt.currencies.map((c: ReceiptCurrency) => ({
           ...c,
           id: c.id.toString(),

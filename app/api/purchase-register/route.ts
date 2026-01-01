@@ -1,138 +1,34 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "../../libs/prisma";
 
-import { PrismaClient,Prisma  } from "@prisma/client";
-
-
-
-const prisma = new PrismaClient();
-
-
-
-// Define types for the Prisma models
-
-type CustomerReceipt = {
-
-  id: bigint;
-
-  permitNo: string;
-
-  serialNumber: string;
-
-  receiptDate: Date;
-
-  customerName: string | null;
-
-  nicPassport: string | null;
-
-  sourceOfForeignCurrency: string | null;
-
-  remarks: string | null;
-
-  createdAt: Date;
-
-  currencies: CustomerReceiptCurrency[];
-
-};
-
-
-
-type CustomerReceiptCurrency = {
-
-  id: bigint;
-
-  receiptId: bigint;
-
-  currencyType: string;
-
-  amountFcy: Prisma.Decimal; 
-
-  rateOffered: Prisma.Decimal; 
-
-  amountIssuedLkr: Prisma.Decimal; 
-
-};
-
-
-
-export async function GET() {
-
+export async function GET(req: NextRequest) {
   try {
-
-    console.log("Fetching purchase records...");
-
-   
-
     const receipts = await prisma.customerReceipt.findMany({
-
       include: { currencies: true },
-
-      orderBy: { receiptDate: "desc" },
-
+      orderBy: { serialNumber: "desc" },
+      take: 100,
     });
 
-
-
-    console.log(`Found ${receipts.length} receipts`);
-
-
-
-    // Convert BigInt IDs and Decimal fields to strings with proper typing
-
-    const serialized = receipts.map((r: CustomerReceipt) => ({
-
-      id: r.id.toString(),
-
-      permitNo: r.permitNo,
-
-      serialNumber: r.serialNumber,
-
-      date: r.receiptDate.toISOString().split('T')[0], // Format as YYYY-MM-DD
-
-      customerName: r.customerName || "",
-
-      nicPassport: r.nicPassport || "",
-
-      sourceOfForeignCurrency: r.sourceOfForeignCurrency
-
-        ? r.sourceOfForeignCurrency.split(",")
-
-        : [],
-
-      remarks: r.remarks || "",
-
-      currencies: r.currencies.map((c: CustomerReceiptCurrency) => ({
-
+    const formatted = receipts.map((receipt) => ({
+      id: receipt.id.toString(),
+      date: receipt.receiptDate.toISOString(),
+      serialNumber: receipt.serialNumber,
+      customerName: receipt.customerName || "",
+      nicPassport: receipt.nicPassport || "",
+      sourceOfForeignCurrency: receipt.sourceOfForeignCurrency?.split(", ") || [],
+      remarks: receipt.remarks || "",
+      currencies: receipt.currencies.map((c) => ({
         id: c.id.toString(),
-
         currencyType: c.currencyType,
-
-        amountFcy: c.amountFcy.toString(),
-
-        rate: c.rateOffered.toString(),
-
-        amountIssuedLkr: c.amountIssuedLkr.toString(),
-
+        amountFcy: Number(c.amountFcy).toFixed(2),
+        rate: Number(c.rateOffered).toFixed(2),
+        amountIssuedLkr: Number(c.amountIssuedLkr).toFixed(2),
       })),
-
     }));
 
-
-
-    return NextResponse.json(serialized);
-
+    return NextResponse.json(formatted);
   } catch (err) {
-
-    console.error("API Error:", err);
-
-    return NextResponse.json(
-
-      { error: "Failed to fetch receipts: " + (err as Error).message },
-
-      { status: 500 }
-
-    );
-
+    console.error("Purchase register error:", err);
+    return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
-
 }
-

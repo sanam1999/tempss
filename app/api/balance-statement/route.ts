@@ -1,36 +1,56 @@
-// app/api/balance-statement/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "../../libs/prisma";
 import { toDayDate } from "../../libs/day";
 
-const CURRENCIES = [
-  "USD",
-  "GBP",
-  "EUR",
-  "CHF",
-  "AUD",
-  "NZD",
-  "SGD",
-  "INR",
-  "CAD",
-];
+const CURRENCIES = ["USD", "GBP", "EUR", "CHF", "AUD", "NZD", "SGD", "INR", "CAD"];
 
-type CurrencyBalance = {
-  currencyType: string;
-  openingBalance: string;
-  purchases: string;
-  exchangeBuy: string;
-  exchangeSell: string;
-  sales: string;
-  deposits: string;
-  closingBalance: string;
-};
+async function getOpeningBalance(currencyType: string, date: Date): Promise<number> {
+  const ob = await prisma.currencyOpeningBalance.findFirst({
+    where: { currencyType, date: { lte: date } },
+    orderBy: { date: "desc" },
+  });
+  return ob ? Number(ob.amount) : 0;
+}
 
-const getPreviousDay = (date: Date) => {
-  const prev = new Date(date);
-  prev.setDate(date.getDate() - 1);
-  return toDayDate(prev);
-};
+async function calculatePurchases(currencyType: string, from: Date, to: Date): Promise<number> {
+  const result = await prisma.customerReceiptCurrency.aggregate({
+    _sum: { amountFcy: true },
+    where: { currencyType, receipt: { receiptDate: { gte: from, lte: to } } },
+  });
+  return Number(result._sum.amountFcy ?? 0);
+}
+
+async function calculateDeposits(currencyType: string, from: Date, to: Date): Promise<number> {
+  const result = await prisma.depositRecord.aggregate({
+    _sum: { amount: true },
+    where: { currencyType, date: { gte: from, lte: to } },
+  });
+  return Number(result._sum.amount ?? 0);
+}
+
+async function calculateExchangeBuy(currencyType: string, from: Date, to: Date): Promise<number> {
+  const result = await prisma.exchangeTransaction.aggregate({
+    _sum: { toAmount: true },
+    where: { toCurrency: currencyType, date: { gte: from, lte: to } },
+  });
+  return Number(result._sum.toAmount ?? 0);
+}
+
+async function calculateExchangeSell(currencyType: string, from: Date, to: Date): Promise<number> {
+  const result = await prisma.exchangeTransaction.aggregate({
+    _sum: { fromAmount: true },
+    where: { fromCurrency: currencyType, date: { gte: from, lte: to } },
+  });
+  return Number(result._sum.fromAmount ?? 0);
+}
+
+async function calculateSales(currencyType: string, from: Date, to: Date): Promise<number> {
+  const result = await prisma.saleTransaction.aggregate({
+    _sum: { amount: true },
+    where: { currencyType, date: { gte: from, lte: to } },
+  });
+  return Number(result._sum.amount ?? 0);
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -38,136 +58,57 @@ export async function GET(req: NextRequest) {
     const fromDateParam = searchParams.get("fromDate");
     const toDateParam = searchParams.get("toDate");
 
-    let from: Date;
-    let to: Date;
+    const today = new Date();
+    const fromDate = fromDateParam ? toDayDate(new Date(fromDateParam)) : toDayDate(today);
+    const toDate = toDateParam ? toDayDate(new Date(toDateParam)) : toDayDate(today);
 
-    if (!fromDateParam || !toDateParam) {
-      const today = new Date();
-      from = toDayDate(today);
-      to = toDayDate(today);
-    } else {
-      const fromParsed = new Date(fromDateParam);
-      const toParsed = new Date(toDateParam);
+    const toEndOfDay = new Date(toDate);
+    toEndOfDay.setHours(23, 59, 59, 999);
 
-      if (isNaN(fromParsed.getTime()) || isNaN(toParsed.getTime())) {
-        return NextResponse.json(
-          { error: "Invalid date format" },
-          { status: 400 }
-        );
-      }
+    const beforeFromDate = new Date(fromDate.getTime() - 86400000);
+    beforeFromDate.setHours(23, 59, 59, 999);
 
-      from = toDayDate(fromParsed);
-      to = toDayDate(toParsed);
-    }
+    const results = await Promise.all(
+      CURRENCIES.map(async (currency) => {
+        const explicitOpening = await getOpeningBalance(currency, beforeFromDate);
+        const purchasesBeforeFrom = await calculatePurchases(currency, new Date(0), beforeFromDate);
+        const depositsBeforeFrom = await calculateDeposits(currency, new Date(0), beforeFromDate);
+        const exchangeBuyBeforeFrom = await calculateExchangeBuy(currency, new Date(0), beforeFromDate);
+        const exchangeSellBeforeFrom = await calculateExchangeSell(currency, new Date(0), beforeFromDate);
+        const salesBeforeFrom = await calculateSales(currency, new Date(0), beforeFromDate);
 
-    const prevDay = getPreviousDay(from);
+        const openingBalance =
+          explicitOpening +
+          purchasesBeforeFrom +
+          exchangeBuyBeforeFrom -
+          exchangeSellBeforeFrom -
+          salesBeforeFrom -
+          depositsBeforeFrom;
 
-    const processingPromises = CURRENCIES.map(async (currency) => {
-      // Get opening balance from previous day
-      const previousBalance = await prisma.dailyCurrencyBalance.findFirst({
-        where: {
+        const purchases = await calculatePurchases(currency, fromDate, toEndOfDay);
+        const deposits = await calculateDeposits(currency, fromDate, toEndOfDay);
+        const exchangeBuy = await calculateExchangeBuy(currency, fromDate, toEndOfDay);
+        const exchangeSell = await calculateExchangeSell(currency, fromDate, toEndOfDay);
+        const sales = await calculateSales(currency, fromDate, toEndOfDay);
+
+        const closingBalance = openingBalance + purchases + exchangeBuy - exchangeSell - sales - deposits;
+
+        return {
           currencyType: currency,
-          date: { lte: prevDay },
-        },
-        orderBy: { date: "desc" },
-        select: { closingBalance: true },
-      });
+          openingBalance: openingBalance.toFixed(2),
+          purchases: purchases.toFixed(2),
+          exchangeBuy: exchangeBuy.toFixed(2),
+          exchangeSell: exchangeSell.toFixed(2),
+          sales: sales.toFixed(2),
+          deposits: deposits.toFixed(2),
+          closingBalance: closingBalance.toFixed(2),
+        };
+      })
+    );
 
-      const openingBalance = previousBalance
-        ? Number(previousBalance.closingBalance)
-        : 0;
-
-      const toEndOfDay = new Date(to);
-      toEndOfDay.setHours(23, 59, 59, 999);
-
-      // Calculate total purchases for the period
-      const purchasesAgg = await prisma.customerReceiptCurrency.aggregate({
-        _sum: { amountFcy: true },
-        where: {
-          currencyType: currency,
-          receipt: {
-            receiptDate: {
-              gte: from,
-              lte: toEndOfDay,
-            },
-          },
-        },
-      });
-      const totalPurchases = Number(purchasesAgg._sum.amountFcy ?? 0);
-
-      // FIXED: Calculate deposits for each day in the range and sum them
-      let totalDeposits = 0;
-      const currentDate = new Date(from);
-      while (currentDate <= to) {
-        const dayDate = toDayDate(currentDate);
-        
-        const dayDepositsAgg = await prisma.depositRecord.aggregate({
-          _sum: { amount: true },
-          where: {
-            currencyType: currency,
-            date: dayDate, // Exact day match
-          },
-        });
-        
-        totalDeposits += Number(dayDepositsAgg._sum.amount ?? 0);
-        currentDate.setDate(currentDate.getDate() + 1);
-      }
-
-      // Get exchange and sales totals from daily records
-      const dailyRecords = await prisma.dailyCurrencyBalance.findMany({
-        where: {
-          currencyType: currency,
-          date: { gte: from, lte: to },
-        },
-        select: {
-          exchangeBuy: true,
-          exchangeSell: true,
-          sales: true,
-        },
-      });
-
-      const totalExchangeBuy = dailyRecords.reduce(
-        (sum, record) => sum + Number(record.exchangeBuy ?? 0),
-        0
-      );
-      const totalExchangeSell = dailyRecords.reduce(
-        (sum, record) => sum + Number(record.exchangeSell ?? 0),
-        0
-      );
-      const totalSales = dailyRecords.reduce(
-        (sum, record) => sum + Number(record.sales ?? 0),
-        0
-      );
-
-      // Calculate closing balance using complete formula
-      const closingBalance =
-        openingBalance +
-        totalPurchases +
-        totalExchangeBuy -
-        totalExchangeSell -
-        totalSales -
-        totalDeposits;
-
-      return {
-        currencyType: currency,
-        openingBalance: openingBalance.toFixed(2),
-        purchases: totalPurchases.toFixed(2),
-        exchangeBuy: totalExchangeBuy.toFixed(2),
-        exchangeSell: totalExchangeSell.toFixed(2),
-        sales: totalSales.toFixed(2),
-        deposits: totalDeposits.toFixed(2),
-        closingBalance: closingBalance.toFixed(2),
-      };
-    });
-
-    const finalResults = await Promise.all(processingPromises);
-
-    return NextResponse.json(finalResults);
+    return NextResponse.json(results);
   } catch (err) {
     console.error("balance-statement error:", err);
-    return NextResponse.json(
-      { error: "Internal Server Error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }

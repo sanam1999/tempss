@@ -37,13 +37,14 @@ model CustomerReceiptCurrency {
   id              BigInt   @id @default(autoincrement())
   receiptId       BigInt
   currencyType    String
-  amountFcy       Decimal
-  rateOffered     Decimal
-  amountIssuedLkr Decimal
+  amountFcy       Decimal  @db.Decimal(18, 4)
+  rateOffered     Decimal  @db.Decimal(18, 4)
+  amountIssuedLkr Decimal  @db.Decimal(18, 4)
 
   receipt CustomerReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  
+  @@index([currencyType, receiptId])
 }
-
 
 model ReceiptPDF {
   id        BigInt          @id @default(autoincrement())
@@ -54,26 +55,47 @@ model ReceiptPDF {
   receipt   CustomerReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
 }
 
-model DailyCurrencyBalance {
-  id             BigInt   @id @default(autoincrement())
-  currencyType   String
-  date           DateTime
-  openingBalance Decimal  @default(0) @db.Decimal(18, 4)
-  purchases      Decimal  @default(0) @db.Decimal(18, 4)
-  exchangeBuy    Decimal  @default(0) @db.Decimal(18, 4)
-  exchangeSell   Decimal  @default(0) @db.Decimal(18, 4)
-  sales          Decimal  @default(0) @db.Decimal(18, 4)
-  deposits       Decimal  @default(0) @db.Decimal(18, 4)
-  closingBalance Decimal  @default(0) @db.Decimal(18, 4)
-
-  @@unique([currencyType, date])
-}
-
 model DepositRecord {
   id           BigInt   @id @default(autoincrement())
   currencyType String
   amount       Decimal  @db.Decimal(18, 4)
   date         DateTime
+  createdAt    DateTime @default(now())
+
+  @@index([currencyType, date])
+}
+
+model CurrencyOpeningBalance {
+  id           BigInt   @id @default(autoincrement())
+  currencyType String
+  date         DateTime
+  amount       Decimal  @db.Decimal(18, 4)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([currencyType, date])
+  @@index([currencyType, date])
+}
+
+model ExchangeTransaction {
+  id           BigInt   @id @default(autoincrement())
+  date         DateTime
+  fromCurrency String
+  toCurrency   String
+  fromAmount   Decimal  @db.Decimal(18, 4)
+  toAmount     Decimal  @db.Decimal(18, 4)
+  rate         Decimal  @db.Decimal(18, 4)
+  createdAt    DateTime @default(now())
+
+  @@index([fromCurrency, date])
+  @@index([toCurrency, date])
+}
+
+model SaleTransaction {
+  id           BigInt   @id @default(autoincrement())
+  date         DateTime
+  currencyType String
+  amount       Decimal  @db.Decimal(18, 4)
   createdAt    DateTime @default(now())
 
   @@index([currencyType, date])

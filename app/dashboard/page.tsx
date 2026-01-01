@@ -7,7 +7,7 @@ import { BookOpen, PieChart, Receipt, Wallet } from "lucide-react";
 import { CustomerReceipt } from "../components/customerReceipt/CustomerReceipt";
 import { PurchaseRegister } from "../components/purchaseRegister/PurchaseRegister";
 import BalanceStatement from "../components/balanceStatement/BalanceStatement";
-import { DepositHistory } from "../components/depositHistory/DepositHistory"; // example
+import  DepositHistory  from "../components/depositHistory/DepositHistory"; // example
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState("receipt");

@@ -1,27 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import {
-    Card,
-    CardContent,
-    CardHeader,
-    CardTitle,
-} from "../ui/card";
-import { Trash2 } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
 import { Button } from "../ui/button";
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from "../ui/table";
-import { toast } from "../../hooks/use-toast";
+import { Trash2 } from "lucide-react";
 import { DateRangeFilter } from "../ui/DateRangeFilter";
+import { toast } from "@/app/hooks/use-toast";
 
-
-interface DepositRecord {
+interface Deposit {
     id: string;
     currencyType: string;
     amount: number;
@@ -29,72 +16,49 @@ interface DepositRecord {
     createdAt: string;
 }
 
-export const DepositHistory: React.FC = () => {
-    const [fromDate, setFromDate] = useState("");
-    const [toDate, setToDate] = useState("");
+export default function DepositHistory() {
+    const [deposits, setDeposits] = useState<Deposit[]>([]);
+    const [fromDate, setFromDate] = useState<string>("");
+    const [toDate, setToDate] = useState<string>("");
     const [loading, setLoading] = useState(false);
-    const [deposits, setDeposits] = useState<DepositRecord[]>([]);
 
-    const fetchDepositHistory = async () => {
+    const fetchDeposits = async () => {
         try {
             setLoading(true);
-            const res = await fetch(
-                `/api/balance-statement/deposits/deposits-all-data?fromDate=${fromDate}&toDate=${toDate}`
-            );
-
-            if (!res.ok) throw new Error("Failed to fetch deposits");
-
+            const res = await fetch(`/api/deposit-history?fromDate=${fromDate}&toDate=${toDate}`);
+            if (!res.ok) throw new Error("Failed to fetch");
             const data = await res.json();
-            setDeposits(Array.isArray(data) ? data : []);
+            setDeposits(data);
         } catch (err) {
-            console.error("Error fetching deposit history:", err);
+            toast({ title: "Error", description: "Failed to load deposits", variant: "destructive" });
         } finally {
             setLoading(false);
         }
     };
 
     useEffect(() => {
-        fetchDepositHistory()
+        const today = new Date().toISOString().split("T")[0];
+        setFromDate(today);
+        setToDate(today);
     }, []);
 
     useEffect(() => {
         if (fromDate && toDate) {
-            fetchDepositHistory();
+            fetchDeposits();
         }
     }, [fromDate, toDate]);
-    const handleDeleteRecord = async (id: string, date: string): Promise<void> => {
+
+    const handleDelete = async (id: string) => {
+        if (!confirm("Delete this deposit?")) return;
 
         try {
-
-            if (!confirm(`Are you sure you want to ${id} delete ${new Date(date).toLocaleDateString()} record? `)) return;
-            const res = await fetch(`/api/balance-statement/deposits?id=${id}`, {
-                method: "DELETE",
-            });
-
-            const data = await res.json();
-
+            const res = await fetch(`/api/balance-statement/deposits?id=${id}`, { method: "DELETE" });
             if (res.ok) {
-                toast({
-                    title: "Success",
-                    description: data.message || "Record deleted successfully",
-                });
-
-
-                setDeposits(prev => prev.filter(d => d.id !== id));
-
-            } else {
-                toast({
-                    title: "Error",
-                    description: data.error || "Delete failed",
-                    variant: "destructive",
-                });
+                toast({ title: "Success", description: "Deposit deleted" });
+                fetchDeposits();
             }
         } catch {
-            toast({
-                title: "Network Error",
-                description: "Something went wrong",
-                variant: "destructive",
-            });
+            toast({ title: "Error", description: "Failed to delete", variant: "destructive" });
         }
     };
 
@@ -104,7 +68,6 @@ export const DepositHistory: React.FC = () => {
                 <CardTitle className="text-2xl">Deposit History</CardTitle>
                 <p className="text-sm opacity-90">All deposit transactions</p>
             </CardHeader>
-
             <CardContent className="pt-6 space-y-6">
                 <DateRangeFilter
                     fromDate={fromDate}
@@ -112,7 +75,7 @@ export const DepositHistory: React.FC = () => {
                     loading={loading}
                     onFromChange={setFromDate}
                     onToChange={setToDate}
-                    onFilter={() => { }}
+                    onFilter={fetchDeposits}
                 />
 
                 <div className="border rounded-lg overflow-hidden">
@@ -120,59 +83,40 @@ export const DepositHistory: React.FC = () => {
                         <TableHeader>
                             <TableRow className="bg-muted/50">
                                 <TableHead>Currency</TableHead>
-                                <TableHead >Amount</TableHead>
+                                <TableHead className="text-right">Amount</TableHead>
                                 <TableHead>Date</TableHead>
                                 <TableHead>Action</TableHead>
                             </TableRow>
                         </TableHeader>
-
                         <TableBody>
-                            {deposits.length === 0 && (
+                            {deposits.length > 0 ? (
+                                deposits.map((deposit) => (
+                                    <TableRow key={deposit.id}>
+                                        <TableCell>
+                                            <span className="px-2 py-1 bg-primary/10 text-primary rounded text-sm font-semibold">
+                                                {deposit.currencyType}
+                                            </span>
+                                        </TableCell>
+                                        <TableCell className="text-right font-mono">{deposit.amount.toFixed(2)}</TableCell>
+                                        <TableCell>{new Date(deposit.date).toLocaleDateString()}</TableCell>
+                                        <TableCell>
+                                            <Button variant="destructive" size="sm" onClick={() => handleDelete(deposit.id)}>
+                                                <Trash2 className="h-4 w-4" />
+                                            </Button>
+                                        </TableCell>
+                                    </TableRow>
+                                ))
+                            ) : (
                                 <TableRow>
-                                    <TableCell
-                                        colSpan={4}
-                                        className="text-center text-muted-foreground py-6"
-                                    >
-                                        No deposit records found
+                                    <TableCell colSpan={4} className="text-center py-8">
+                                        No deposits found
                                     </TableCell>
                                 </TableRow>
                             )}
-
-                            {deposits.map((deposit) => (
-                                <TableRow key={deposit.id} className="hover:bg-muted/30">
-                                    <TableCell className="font-semibold">
-                                        <span className="px-2 py-1 bg-primary/10 text-primary rounded text-sm">
-                                            {deposit.currencyType}
-                                        </span>
-                                    </TableCell>
-
-                                    <TableCell className=" font-mono font-semibold">
-                                        {Number(deposit.amount).toFixed(2)}
-                                    </TableCell>
-
-                                    <TableCell>
-                                        {new Date(deposit.date).toLocaleDateString()}
-                                    </TableCell>
-
-                                    <TableCell className="text-muted-foreground">
-                                        <Button
-                                            variant="destructive"
-                                            size="sm"
-                                            onClick={() => { handleDeleteRecord(deposit.id, deposit.date) }}
-                                            className="gap-2"
-                                        >
-                                            <Trash2 className="h-4 w-4" />
-                                            Delete
-                                        </Button>
-                                    </TableCell>
-                                </TableRow>
-                            ))}
                         </TableBody>
                     </Table>
                 </div>
             </CardContent>
         </Card>
     );
-};
-
-export default DepositHistory;
+}

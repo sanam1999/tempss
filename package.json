@@ -4,9 +4,9 @@
   "private": true,
   "scripts": {
     "predev": "dotenv -e .env npx prisma generate && dotenv -e .env npx prisma migrate dev",
-    "dev": "npm run predev && next dev --turbopack",
+    "dev": "npm run predev && next dev -p 3100 --turbopack ",
     "build": "next build --turbopack",
-    "start": "next start",
+    "start": "next start -p 3100",
     "lint": "eslint",
     "test": "jest",
     "db:generate": "dotenv -e .env npx prisma generate",
