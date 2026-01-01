@@ -53,29 +53,35 @@ export const PurchaseRegister = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [purchases, setPurchases] = useState<PurchaseRecord[]>([]);
   const [filteredPurchases, setFilteredPurchases] = useState<PurchaseRecord[]>([]);
-  const [fromDate, setFromDate] = useState<string>(new Date().toISOString().split("T")[0]);
-  const [toDate, setToDate] = useState<string>(new Date().toISOString().split("T")[0]);
+  const [fromDate, setFromDate] = useState<string>("");
+  const [toDate, setToDate] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<PurchaseRecord | null>(null);
   const [today, settodaydate] = useState<string>("")
 
-
   useEffect(() => {
     const fetchDate = async () => {
       const date = await getSriLankaDateString();
       if (date) {
-        setFromDate(date);
-        setToDate(date);
-        settodaydate(date);
+        const todayDate = new Date(date);
+
+        const from = new Date(todayDate);
+        from.setDate(from.getDate() - 30);
+
+        const fromDateString = from.toISOString().split("T")[0];
+
+        setFromDate(fromDateString); 
+        setToDate(date);             
+        settodaydate(date);         
       }
+
     };
     fetchDate();
   }, []);
 
   const fetchPurchases = useCallback(async () => {
     try {
-      setLoading(true);
       const res = await fetch("/api/purchase-register");
       if (!res.ok) throw new Error("Failed to fetch");
 
@@ -86,8 +92,6 @@ export const PurchaseRegister = () => {
       setFilteredPurchases(data);
     } catch (err) {
       toast({ title: "Error", description: "Failed to load purchases", variant: "destructive" });
-    } finally {
-      setLoading(false);
     }
   }, []);
 
@@ -95,6 +99,7 @@ export const PurchaseRegister = () => {
     fetchPurchases();
   }, [fetchPurchases]);
 
+  // Auto-apply search filter only (not date)
   useEffect(() => {
     const filtered = purchases.filter(
       (p) =>
@@ -102,8 +107,44 @@ export const PurchaseRegister = () => {
         p.nicPassport.toLowerCase().includes(searchTerm.toLowerCase()) ||
         p.serialNumber.includes(searchTerm)
     );
+
+    filtered.sort((a, b) => parseInt(b.serialNumber) - parseInt(a.serialNumber));
+
     setFilteredPurchases(filtered);
   }, [searchTerm, purchases]);
+
+  // Filter by date when clicking Filter button
+  const handleFilter = () => {
+    setLoading(true);
+
+    let filtered = [...purchases];
+
+    // Apply date range filter
+    if (fromDate && toDate) {
+      filtered = filtered.filter((purchase) => {
+        const purchaseDate = new Date(purchase.date);
+        const from = new Date(fromDate);
+        const to = new Date(toDate);
+        return purchaseDate >= from && purchaseDate <= to;
+      });
+    }
+
+    // Apply search filter
+    if (searchTerm) {
+      filtered = filtered.filter(
+        (purchase) =>
+          purchase.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          purchase.nicPassport.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          purchase.serialNumber.includes(searchTerm)
+      );
+    }
+
+    // Sort by serialNumber descending
+    filtered.sort((a, b) => parseInt(b.serialNumber) - parseInt(a.serialNumber));
+
+    setFilteredPurchases(filtered);
+    setTimeout(() => setLoading(false), 300);
+  };
 
   const handleDeleteRecord = async (id: string): Promise<void> => {
     if (!confirm("Delete this record?")) return;
@@ -125,10 +166,9 @@ export const PurchaseRegister = () => {
 
   const handleEditRecord = (record: PurchaseRecord, currency: CurrencyDetail) => {
     if (record && currency) {
-      // Create a modified record with only the selected currency
       const modifiedRecord = {
         ...record,
-        currencies: [currency] // Pass only the clicked currency
+        currencies: [currency]
       };
       setSelectedRecord(modifiedRecord);
       setIsEditOpen(true);
@@ -179,14 +219,14 @@ export const PurchaseRegister = () => {
           </div>
         </div>
 
-
+        {/* Date Range Filter - CHANGED onFilter prop */}
         <DateRangeFilter
           fromDate={fromDate}
           toDate={toDate}
           loading={loading}
           onFromChange={setFromDate}
           onToChange={setToDate}
-          onFilter={fetchPurchases}
+          onFilter={handleFilter}
         />
 
         <div className="border rounded-lg overflow-hidden">
@@ -208,7 +248,6 @@ export const PurchaseRegister = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-
                 {filteredPurchases.length > 0 ? (
                   filteredPurchases.map((purchase) =>
                     purchase.currencies.map((currency, index) => (
