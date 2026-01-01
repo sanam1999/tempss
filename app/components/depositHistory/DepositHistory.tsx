@@ -37,10 +37,13 @@ export default function DepositHistory() {
     };
 
     useEffect(() => {
-        const today = new Date().toISOString().split("T")[0];
-        setFromDate(today);
-        setToDate(today);
+        const today = new Date();
+        const fromDate = new Date();
+        fromDate.setDate(today.getDate() - 30);
+        setFromDate(fromDate.toISOString().split("T")[0]);
+        setToDate(today.toISOString().split("T")[0]);
     }, []);
+
 
     useEffect(() => {
         if (fromDate && toDate) {
