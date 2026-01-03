@@ -71,11 +71,10 @@ export const PurchaseRegister = () => {
 
         const fromDateString = from.toISOString().split("T")[0];
 
-        setFromDate(fromDateString); 
-        setToDate(date);             
-        settodaydate(date);         
+        setFromDate(fromDateString);
+        setToDate(date);
+        settodaydate(date);
       }
-
     };
     fetchDate();
   }, []);
@@ -114,7 +113,7 @@ export const PurchaseRegister = () => {
   }, [searchTerm, purchases]);
 
   // Filter by date when clicking Filter button
-  const handleFilter = () => {
+  const handleFilter = useCallback(() => {
     setLoading(true);
 
     let filtered = [...purchases];
@@ -144,7 +143,14 @@ export const PurchaseRegister = () => {
 
     setFilteredPurchases(filtered);
     setTimeout(() => setLoading(false), 300);
-  };
+  }, [purchases, fromDate, toDate, searchTerm]);
+
+  // Auto-apply filter when dates and purchases are ready
+  useEffect(() => {
+    if (fromDate && toDate && purchases.length > 0) {
+      handleFilter();
+    }
+  }, [fromDate, toDate, purchases.length, handleFilter]);
 
   const handleDeleteRecord = async (id: string): Promise<void> => {
     if (!confirm("Delete this record?")) return;
@@ -179,6 +185,7 @@ export const PurchaseRegister = () => {
     (sum, p) => sum + p.currencies.reduce((s, c) => s + parseFloat(c.amountIssuedLkr || "0"), 0),
     0
   );
+
 
   return (
     <Card className="shadow-[var(--shadow-medium)]">
@@ -244,7 +251,7 @@ export const PurchaseRegister = () => {
                   <TableHead className="text-right">Rate</TableHead>
                   <TableHead className="text-right">Amount (Rs.)</TableHead>
                   <TableHead>Remarks</TableHead>
-                  <TableHead className="text-center">Action</TableHead>
+                  <TableHead className="text-center">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

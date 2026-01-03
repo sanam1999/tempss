@@ -12,6 +12,7 @@ import { Button } from "../ui/button";
 import { DateRangeFilter } from "../ui/DateRangeFilter";
 import { generateBalanceStatementPDF } from "./pdfGenerator";
 import { toast } from "@/app/hooks/use-toast";
+import { Calendar } from "lucide-react";
 
 interface CurrencyBalance {
   currencyType: string;
@@ -48,6 +49,7 @@ export default function BalanceStatement() {
   const [depositInputs, setDepositInputs] = useState<Record<string, string>>({});
   const [selectedCurrency, setSelectedCurrency] = useState<string>("");
   const [refreshKey, setRefreshKey] = useState(0);
+  const [depositDate, setDepositDate] = useState<string>(new Date().toISOString().split('T')[0]);
 
   const fetchBalanceData = useCallback(async () => {
     if (!fromDate || !toDate) return;
@@ -106,9 +108,9 @@ export default function BalanceStatement() {
       const res = await fetch("/api/balance-statement/update-deposit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ currencyType: selectedCurrency, date: toDate, amount }),
+        body: JSON.stringify({ currencyType: selectedCurrency, date: depositDate, amount }),
       });
-
+     
       const data = await res.json();
       if (!res.ok) {
         toast({ title: "Error", description: data.error, variant: "destructive" });
@@ -159,7 +161,7 @@ export default function BalanceStatement() {
           </CardHeader>
           <CardContent>
             <div className="flex flex-col sm:flex-row gap-4 items-end">
-              <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="text-sm font-medium mb-2 block">Select Currency</label>
                   <select
@@ -189,8 +191,14 @@ export default function BalanceStatement() {
                     disabled={!selectedCurrency}
                   />
                 </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium flex items-center gap-2">
+                    <Calendar className="h-4 w-4" />
+                    From Date
+                  </label>
+                  <Input type="date" value={depositDate} onChange={(e) => setDepositDate(e.target.value)} />
+                </div>
               </div>
-
               <Button variant="default" onClick={handleSaveDeposit} disabled={!selectedCurrency}>
                 Add Deposit
               </Button>

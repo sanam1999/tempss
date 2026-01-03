@@ -88,7 +88,7 @@ export default function DepositHistory() {
                                 <TableHead>Currency</TableHead>
                                 <TableHead className="text-right">Amount</TableHead>
                                 <TableHead>Date</TableHead>
-                                <TableHead>Action</TableHead>
+                                <TableHead>Actions</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
